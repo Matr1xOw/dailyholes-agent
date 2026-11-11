@@ -1,0 +1,17 @@
+# the game's own code gets downloaded here by scripts/fetch_game.py.
+# it belongs to the game's developer, so it never goes in this repo.
+vendor/
+
+# daily results stay local (no publishing solutions to a ranked course)
+outputs/
+
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# training artifacts
+checkpoints/
+runs/
+
+.DS_Store
