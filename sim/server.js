@@ -15,6 +15,14 @@
 //     (with its score), or where the ball is now plus the mini-map around it.
 //   {"cmd": "course", "key": "..."}
 //     Basic info about a course (name, pars).
+//   {"cmd": "search", "key": "...", "hole": 0, "shots": [...], "clubs": [5, 6],
+//    "aim": 0.1, "aim_half_width": 0.05, "aim_step": 0.0003,
+//    "meter": 0.9, "meter_half_width": 0.15, "meter_step": 0.001}
+//     Looks for a hole-out near a suggested next shot (see handleSearch).
+//     With "goal": "portal" it looks for shots that end in the portal instead.
+//   {"cmd": "outcomes", "key": "...", "hole": 0, "shots": [...], "candidates": [[club, aim, meter], ...]}
+//     For each candidate next shot: the score if it ends the hole, otherwise
+//     strokes so far, lie and distance left. No mini-map, so it's fast.
 //   {"cmd": "batch", "requests": [ ... ]}
 //     Several requests in one message, to cut down on back-and-forth.
 
@@ -314,6 +322,7 @@ function handleCourse(request) {
     name: course.name,
     pars: course.holes.map((h) => h.par),
     lengths: course.holes.map((h) => h.len),
+    portal_positions: course.holes.map((h) => (h.portal ? { x: h.portal.x, y: h.portal.y, r: h.portal.r, exit: h.portal.exit } : null)),
     portal_kinds: course.holes.map((h) => (h.portal ? (h.portal.onGreen ? "green" : "forward") : null)),
     clubs: game.CLUBS.map((c) => ({ id: c.id, name: c.name, carry: c.carry, roll: c.roll })),
     meter_max: game.METER_MAX,
@@ -321,9 +330,120 @@ function handleCourse(request) {
   };
 }
 
+// Search for a hole-out near a suggested shot. Tries a grid of aims and meters
+// for each club in `clubs`, from wherever the given shots leave the ball, and
+// keeps the hits. Hole-out targets are small, and the browser hands are never
+// perfectly exact, so among the hits it picks the "safest": the one with the
+// most hits around it in every direction (its inset, in grid steps), meaning
+// the most room for error.
+function handleSearch(request) {
+  const course = getCourse(request.key);
+  const hole = course.holes[request.hole];
+  if (!hole) throw new Error(`course ${request.key} has no hole ${request.hole}`);
+  const shots = request.shots || [];
+  let ball = { x: hole.path[0].x, y: hole.path[0].y }, lie = "tee";
+  if (shots.length > 0) {
+    const before = game.resumeHole(hole, request.hole, request.key, shots);
+    if (!before || before.score != null) throw new Error("the hole is already over");
+    ball = before.ball;
+    lie = before.lie;
+  }
+  const aimStep = request.aim_step, meterStep = request.meter_step;
+  const aimCount = 2 * Math.round(request.aim_half_width / aimStep) + 1;
+  const meterCount = 2 * Math.round(request.meter_half_width / meterStep) + 1;
+  const shotIndex = shots.length;
+  // What counts as a hit. "holed" (the default): the shot drops. "portal": the
+  // shot comes to rest in the hole's portal and gets sent to its exit. That is
+  // checked by replaying the whole hole, so windmills and the like count too.
+  const goal = request.goal || "holed";
+  const strokesBefore = shots.length === 0 ? 0 : game.resumeHole(hole, request.hole, request.key, shots).strokes;
+  const isHit = goal === "portal"
+    ? (club, aim, meter) => {
+        const after = game.resumeHole(hole, request.hole, request.key, [...shots, [club, aim, meter]]);
+        return after && after.score == null && after.strokes === strokesBefore + 1 &&
+          Math.hypot(after.ball.x - hole.portal.exit.x, after.ball.y - hole.portal.exit.y) < 0.01;
+      }
+    : (club, aim, meter) =>
+        game.resolveShot(hole, ball, lie, game.CLUBS[club], aim, meter, game.shotRng(request.key, request.hole, shotIndex)).holed;
+  if (goal === "portal" && !hole.portal) return { found: false, hits: 0 };
+
+  let best = null, totalHits = 0;
+  const samples = []; // a spread of hits, for the caller to look at more closely
+  for (const club of request.clubs) {
+    const grid = new Uint8Array(aimCount * meterCount);
+    let clubHits = 0;
+    for (let i = 0; i < aimCount; i++) {
+      const aim = request.aim + (i - (aimCount - 1) / 2) * aimStep;
+      for (let j = 0; j < meterCount; j++) {
+        const meter = request.meter + (j - (meterCount - 1) / 2) * meterStep;
+        if (meter < 0 || meter > game.METER_MAX) continue;
+        if (isHit(club, aim, meter)) {
+          grid[i * meterCount + j] = 1; clubHits++;
+          if (samples.length < 400) samples.push([club, aim, meter]);
+        }
+      }
+    }
+    totalHits += clubHits;
+    if (clubHits === 0) continue;
+    // Inset of each hit: grow a box around it until it touches a miss.
+    const inGrid = (i, j) => i >= 0 && j >= 0 && i < aimCount && j < meterCount && grid[i * meterCount + j] === 1;
+    for (let i = 0; i < aimCount; i++) {
+      for (let j = 0; j < meterCount; j++) {
+        if (!grid[i * meterCount + j]) continue;
+        let inset = 0;
+        grow: for (let r = 1; r < 40; r++) {
+          for (let di = -r; di <= r; di++) {
+            if (!inGrid(i + di, j - r) || !inGrid(i + di, j + r)) break grow;
+          }
+          for (let dj = -r; dj <= r; dj++) {
+            if (!inGrid(i - r, j + dj) || !inGrid(i + r, j + dj)) break grow;
+          }
+          inset = r;
+        }
+        if (!best || inset > best.inset) {
+          best = {
+            club,
+            aim: request.aim + (i - (aimCount - 1) / 2) * aimStep,
+            meter: request.meter + (j - (meterCount - 1) / 2) * meterStep,
+            inset,
+          };
+        }
+      }
+    }
+  }
+  if (!best) return { found: false, hits: 0 };
+  return {
+    found: true,
+    hits: totalHits,
+    club: best.club,
+    aim: best.aim,
+    meter: best.meter,
+    inset_steps: best.inset,
+    aim_margin_deg: (best.inset * aimStep * 180) / Math.PI,
+    meter_margin: best.inset * meterStep,
+    samples: samples.filter((_, k) => k % Math.ceil(samples.length / 40) === 0),
+  };
+}
+
+// Where each of several candidate next shots would leave things, without the
+// mini-map (so it's cheap enough to try thousands). Used for the lookahead.
+function handleOutcomes(request) {
+  const course = getCourse(request.key);
+  const hole = course.holes[request.hole];
+  const shots = request.shots || [];
+  return request.candidates.map((candidate) => {
+    const after = game.resumeHole(hole, request.hole, request.key, [...shots, candidate]);
+    if (!after) return null;
+    if (after.score != null) return { done: true, score: after.score };
+    return { done: false, strokes: after.strokes, lie: after.lie, pin_distance: distance(after.ball, hole.pin) };
+  });
+}
+
 function handle(request) {
   switch (request.cmd) {
+    case "outcomes": return handleOutcomes(request);
     case "observe": return handleObserve(request);
+    case "search": return handleSearch(request);
     case "course": return handleCourse(request);
     case "batch": return request.requests.map((r) => safeHandle(r));
     case "ping": return { pong: true };
