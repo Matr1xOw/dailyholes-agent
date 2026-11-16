@@ -1,0 +1,372 @@
+{
+ "size": {
+  "width": 1600,
+  "height": 1000
+ },
+ "crop": {
+  "x": 498,
+  "y": 30,
+  "w": 604,
+  "h": 940
+ },
+ "events": [
+  {
+   "t": 10.28,
+   "kind": "shot_start",
+   "hole": 0,
+   "shot": 0,
+   "club": "DR",
+   "source": "hole-out search (fine)",
+   "expect_holed": true
+  },
+  {
+   "t": 27.21,
+   "kind": "shot_end",
+   "hole": 0,
+   "shot": 0,
+   "outcome": "holed!",
+   "done": true,
+   "score": 1,
+   "par": 4,
+   "holed": true,
+   "swing_t": 25.41
+  },
+  {
+   "t": 37.98,
+   "kind": "shot_start",
+   "hole": 1,
+   "shot": 0,
+   "club": "5W",
+   "source": "forward portal",
+   "expect_holed": false
+  },
+  {
+   "t": 42.35,
+   "kind": "shot_end",
+   "hole": 1,
+   "shot": 0,
+   "outcome": "leaves, 249.9 yd left",
+   "done": false,
+   "score": null,
+   "par": 6,
+   "holed": false,
+   "swing_t": 39.75
+  },
+  {
+   "t": 58.18,
+   "kind": "shot_start",
+   "hole": 1,
+   "shot": 1,
+   "club": "8i",
+   "source": "agent",
+   "expect_holed": false
+  },
+  {
+   "t": 62.22,
+   "kind": "shot_end",
+   "hole": 1,
+   "shot": 1,
+   "outcome": "fairway, 125.1 yd left",
+   "done": false,
+   "score": null,
+   "par": 6,
+   "holed": false,
+   "swing_t": 60.34
+  },
+  {
+   "t": 89.59,
+   "kind": "shot_start",
+   "hole": 1,
+   "shot": 2,
+   "club": "6i",
+   "source": "hole-out search",
+   "expect_holed": true
+  },
+  {
+   "t": 92.51,
+   "kind": "shot_end",
+   "hole": 1,
+   "shot": 2,
+   "outcome": "holed!",
+   "done": true,
+   "score": 3,
+   "par": 6,
+   "holed": true,
+   "swing_t": 91.15
+  },
+  {
+   "t": 93.58,
+   "kind": "shot_start",
+   "hole": 2,
+   "shot": 0,
+   "club": "DR",
+   "source": "lookahead",
+   "expect_holed": false
+  },
+  {
+   "t": 98.69,
+   "kind": "shot_end",
+   "hole": 2,
+   "shot": 0,
+   "outcome": "fairway, 55.6 yd left",
+   "done": false,
+   "score": null,
+   "par": 4,
+   "holed": false,
+   "swing_t": 95.49
+  },
+  {
+   "t": 101.88,
+   "kind": "shot_start",
+   "hole": 2,
+   "shot": 1,
+   "club": "LW",
+   "source": "hole-out search",
+   "expect_holed": true
+  },
+  {
+   "t": 105.07,
+   "kind": "shot_end",
+   "hole": 2,
+   "shot": 1,
+   "outcome": "holed!",
+   "done": true,
+   "score": 2,
+   "par": 4,
+   "holed": true,
+   "swing_t": 104.11
+  },
+  {
+   "t": 112.39,
+   "kind": "shot_start",
+   "hole": 3,
+   "shot": 0,
+   "club": "6i",
+   "source": "hole-out search",
+   "expect_holed": true
+  },
+  {
+   "t": 115.34,
+   "kind": "shot_end",
+   "hole": 3,
+   "shot": 0,
+   "outcome": "holed!",
+   "done": true,
+   "score": 1,
+   "par": 3,
+   "holed": true,
+   "swing_t": 113.98
+  },
+  {
+   "t": 123.41,
+   "kind": "shot_start",
+   "hole": 4,
+   "shot": 0,
+   "club": "6i",
+   "source": "hole-out search",
+   "expect_holed": true
+  },
+  {
+   "t": 126.74,
+   "kind": "shot_end",
+   "hole": 4,
+   "shot": 0,
+   "outcome": "holed!",
+   "done": true,
+   "score": 1,
+   "par": 3,
+   "holed": true,
+   "swing_t": 125.26
+  },
+  {
+   "t": 127.51,
+   "kind": "shot_start",
+   "hole": 5,
+   "shot": 0,
+   "club": "DR",
+   "source": "agent",
+   "expect_holed": false
+  },
+  {
+   "t": 132.06,
+   "kind": "shot_end",
+   "hole": 5,
+   "shot": 0,
+   "outcome": "fairway, 56.8 yd left",
+   "done": false,
+   "score": null,
+   "par": 4,
+   "holed": false,
+   "swing_t": 129.34
+  },
+  {
+   "t": 134.44,
+   "kind": "shot_start",
+   "hole": 5,
+   "shot": 1,
+   "club": "LW",
+   "source": "hole-out search",
+   "expect_holed": true
+  },
+  {
+   "t": 138.37,
+   "kind": "shot_end",
+   "hole": 5,
+   "shot": 1,
+   "outcome": "holed!",
+   "done": true,
+   "score": 2,
+   "par": 4,
+   "holed": true,
+   "swing_t": 137.37
+  },
+  {
+   "t": 139.64,
+   "kind": "shot_start",
+   "hole": 6,
+   "shot": 0,
+   "club": "DR",
+   "source": "agent",
+   "expect_holed": false
+  },
+  {
+   "t": 144.23,
+   "kind": "shot_end",
+   "hole": 6,
+   "shot": 0,
+   "outcome": "fairway, 38.8 yd left",
+   "done": false,
+   "score": null,
+   "par": 4,
+   "holed": false,
+   "swing_t": 141.47
+  },
+  {
+   "t": 149.47,
+   "kind": "shot_start",
+   "hole": 6,
+   "shot": 1,
+   "club": "LW",
+   "source": "hole-out search",
+   "expect_holed": true
+  },
+  {
+   "t": 153.71,
+   "kind": "shot_end",
+   "hole": 6,
+   "shot": 1,
+   "outcome": "holed!",
+   "done": true,
+   "score": 2,
+   "par": 4,
+   "holed": true,
+   "swing_t": 152.75
+  },
+  {
+   "t": 154.51,
+   "kind": "shot_start",
+   "hole": 7,
+   "shot": 0,
+   "club": "DR",
+   "source": "agent",
+   "expect_holed": false
+  },
+  {
+   "t": 159.19,
+   "kind": "shot_end",
+   "hole": 7,
+   "shot": 0,
+   "outcome": "fairway, 135.4 yd left",
+   "done": false,
+   "score": null,
+   "par": 5,
+   "holed": false,
+   "swing_t": 156.35
+  },
+  {
+   "t": 165.91,
+   "kind": "shot_start",
+   "hole": 7,
+   "shot": 1,
+   "club": "6i",
+   "source": "hole-out search",
+   "expect_holed": true
+  },
+  {
+   "t": 168.89,
+   "kind": "shot_end",
+   "hole": 7,
+   "shot": 1,
+   "outcome": "holed!",
+   "done": true,
+   "score": 2,
+   "par": 5,
+   "holed": true,
+   "swing_t": 167.49
+  },
+  {
+   "t": 169.63,
+   "kind": "shot_start",
+   "hole": 8,
+   "shot": 0,
+   "club": "DR",
+   "source": "agent",
+   "expect_holed": false
+  },
+  {
+   "t": 174.24,
+   "kind": "shot_end",
+   "hole": 8,
+   "shot": 0,
+   "outcome": "fairway, 65.6 yd left",
+   "done": false,
+   "score": null,
+   "par": 4,
+   "holed": false,
+   "swing_t": 171.48
+  },
+  {
+   "t": 176.37,
+   "kind": "shot_start",
+   "hole": 8,
+   "shot": 1,
+   "club": "LW",
+   "source": "hole-out search",
+   "expect_holed": true
+  },
+  {
+   "t": 179.72,
+   "kind": "shot_end",
+   "hole": 8,
+   "shot": 1,
+   "outcome": "holed!",
+   "done": true,
+   "score": 2,
+   "par": 4,
+   "holed": true,
+   "swing_t": 178.72
+  },
+  {
+   "t": 179.73,
+   "kind": "round_over",
+   "scores": [
+    1,
+    3,
+    2,
+    1,
+    1,
+    2,
+    2,
+    2,
+    2
+   ],
+   "to_par": -21
+  }
+ ],
+ "panel_crop": {
+  "x": 1350,
+  "y": 812,
+  "w": 238,
+  "h": 176
+ }
+}
