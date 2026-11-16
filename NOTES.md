@@ -140,3 +140,59 @@ For comparison, smart plus portals is -3.6. The agent passed it somewhere betwee
 The agent wins on all regular holes. Par 3s and par 5s are where it pulls away. Portal holes are the only place it's still behind, even with 35% oversampling. That's the obvious target for anything I try next.
 
 **Takeaways.** The first run really was just undertrained: the same setup, run 27 times longer, went from -0.1 to -6.0. Exploration had mostly shut off by the end (0.3 deg aim spread), and the learning rate had decayed to zero, so more of the same probably gives diminishing returns. A fix aimed at portals (more oversampling, or a better portal feature) seems more promising than just training longer.
+
+## 2026-11-16: Today's course, and where the missing strokes are
+
+Played today's course (Elderridge Golf Club) offline with the 8M agent: **-9**, birdie or better on 7 of 9 holes. Smart scored -6. (`scripts/play_course.py` prints the round shot by shot.)
+
+-6 a round still felt mediocre next to my -13, so I checked where the strokes go. `scripts/holeout_probe.js` keeps the agent's shots, then searches about 180k alternatives for the last shot of each hole (nearby clubs, aim within 3 deg, meter within 0.15). **A hole-out was available on 8 of 9 holes**, including an ace on the par 3 5th. Taking them would have made the round **-18**.
+
+Why the agent can't find these by itself: the bounce and roll depend on a random number seeded by course, hole and stroke. The agent can't see that number, so from its side a hole-out is luck, and the best it can learn is to finish close, which it already does. That limit comes from what the agent can see, not from how long it trains. Fixing it means planning against the simulator for that specific day (search), with the trained agent getting the ball into position.
+
+How big the targets are: roughly 0.2-0.5 deg of aim and 0.01-0.04 of meter, sometimes much less (the par 7 hole-out is about 0.1 deg wide). Whether the browser hands can time clicks that precisely is the real question for playing the actual game.
+
+## 2026-11-16: The hands, and the first real round: -20
+
+**Brain.** `agent/planner.py`: the 8M agent picks a shot, then the simulator searches around it for a hole-out (nearby clubs, aim within 3 deg, meter within 0.15) and plays the one with the most room for error. If nothing's there on a shot under 200 yd, it also searches a wide fan of aims (pin +-21 deg) and the whole meter, since a slope can make a shot well off line the one that drops. Offline on today's course this planned -17, up from -9.
+
+**Hands.** `hands/hands.js` runs inside the game page and only does what taps do: pick club, tap the aim line, lock, swing. The game reads the aim and meter once per screen frame, so timing is everything:
+- Tap the aim line so the target sits at the edge of the sweep, where the aim slows to a stop, and time that tap so a frame lands right on the edge.
+- Lock on a frame whose real aim is within 0.004 deg, timing the lock so a later frame lands on the wanted meter.
+- Swing on a frame whose real meter is within 0.0004.
+- It checks the game's actual value before every tap, so a bad prediction means waiting for the next pass, never a bad shot.
+- Bug found live: the browser rounds frame timestamps to 0.1 ms, which reads 60 Hz as 16.7 ms instead of 16.667. Over a one-second swing that's 2 ms off, enough to miss the meter, and swings were taking 17-40 s. Measuring the interval over 90 frames fixed most of it (most swings now hit on the first pass, about 1.5 s), though two still took about 80 s.
+- Real errors over 17 shots: aim within 0.0003 deg, meter within 0.0003. The tightest hole-out margin it needed was 0.02 deg / 0.001.
+
+**First real round** (practice, Ferngate Old Course, 2026-11-15 course, nothing submitted): **-20** (17 strokes on a par 37). Eagle, albatross, eagle, eagle, ace, eagle, eagle, ace, albatross. Every hole-out the sim promised dropped in the real game, which also re-confirms the parity test.
+
+The loop for now is me running the brain from the terminal and sending each shot to the hands, about 25 tool calls a round. Next: make it run on its own, fix the occasional slow swing, and let the search plan two shots ahead (place the drive somewhere that leaves the biggest hole-out target).
+
+## 2026-11-16: Forward portals always go
+
+My feedback after the -20 round: on hole 9 the agent drove right past a forward portal (219 yd out, 10.6 yd wide) that would have dropped the ball about 250 yd from the pin, with a possible hole-in-2. **Rule: a forward portal is never a bad idea, so always take it.** Green portals are different (a hole-out eagle beats a portal two-putt), so those stay up to the agent.
+
+- The search can now look for "ends up in the portal" as well as "holes out". The planner order is: hole-out from here if there is one, otherwise the forward portal if it's within reach and saves at least 30 yd, otherwise the agent's shot. The portal exit is a fixed spot, so the hole-out search just runs from there on the next shot.
+- Also found that from the exit there were 63 hole-outs, all narrower than the 0.02 deg search grid, so they were thrown out. The hands are about 50 times more precise than that grid, so the planner now zooms in on those hits with a 20x finer grid and accepts any with at least 0.006 deg / 0.0006 meter of margin.
+- Ferngate hole 9 replanned: 4-iron into the portal (0.9 deg of margin), then a 253 yd hole-out (0.011 deg margin) for a **2 on a par 6**. The round would have been -21.
+
+## 2026-11-16: Autopilot, and the water hole
+
+**Autopilot.** `scripts/autoplay.py` plays a whole practice round with no one at the keyboard. It opens its own Chrome window (installed Chrome, separate profile in `.browser-profile/`) and either waits for me to start a practice round or opens one itself with `--course <name>`, clicking through the normal Practice menu so the practice limit still applies. Each shot it reads the real game, plans, plays it with the hands, and checks the real result against the simulator. It refuses to touch a ranked round.
+
+The hands now get a tolerance per shot: a fraction of the margin for planned hole-outs, and a looser 0.02 deg / 0.002 for everything else, since the brain replans from wherever the ball really ends up. Average swing wait dropped to 2.6 s (max 18 s).
+
+**First autopilot round** (Stonemoor Links, 2026-11-14 course): **-16**. Scores 2, 1, 1, 2, 2, 2, 10, 1, 2: three aces and a 2 on a par 6 via the forward portal. The simulator agreed with the real game on every one of the 18 shots.
+
+**The water hole.** Hole 7 is a par 6 that's mostly water: only about 1 tee shot in 10 (across every club, aim and meter) stays dry, and the dry line is right of the pin. The agent aimed straight over the water, got a penalty drop in the rough, and then hit the same doomed driver again and again until the 10-stroke cap. It had almost never seen a hole like that in training, and it couldn't tell its shot was doomed.
+
+**Fix: a one-step lookahead.** Before playing the agent's shot, the brain tries about 2,800 others in the simulator (every club, aims within 30 deg of the pin, ten meter levels), roughly ranks where they leave the ball, and then scores the best 60 plus the agent's own with the agent's value head (its own estimate of strokes still to come). It only overrides the agent if something looks at least 0.3 strokes better. On hole 7 the agent's shot rated 9.4 strokes to finish and the lookahead found a 3-wood to the fairway rated 3.2, then a hole-out: 2 instead of 10.
+
+Planned rounds with the full brain (hole-outs, forward portals, fine search, lookahead), eagle or better on every single hole:
+
+| course | before | now |
+|---|---|---|
+| Stonemoor Links (11-14) | -16 (real, autopilot) | -24 |
+| Ferngate Old Course (11-15) | -20 (real) | -21 |
+| Elderridge Golf Club (11-16) | -17 | -20 |
+
+The lookahead also helps off the tee on normal holes: it often picks a maxed-out driver (meter 1.10) that runs right up near the green, which the agent alone was too cautious to try.

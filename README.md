@@ -55,3 +55,20 @@ The smart one is the real bar. If the RL agent can't beat a page of if-statement
 The first PPO run went from random (about +48 a round) to -0.1 in 40 minutes and was still improving when it stopped. Most of the gap to the smart player is on portal holes, which only show up on about one hole in five, so it hasn't had much practice with them yet.
 
 Run two trained overnight on 8 million shots and came out at -6.0 a round on the test courses. That's 2.4 strokes better than the smart player and about where my own typical round sits. It beats the smart player on every kind of hole except portal holes, where the smart player still does slightly better. The 7.5M snapshot actually scored a bit better (-6.2), but that gap is within the noise for 360 holes.
+
+## The super player
+
+-6 a round is good but not great, and I wanted something that beats me. The problem is that holing out depends on a random number seeded for each stroke, which the agent can't see, so it can only learn to finish close. The simulator can see it, though. So the full player is the trained agent plus a search:
+
+- **Hole-outs.** For each shot the simulator searches around the agent's idea (and a wider fan on short shots) for any shot that drops, and picks the one with the most room for error.
+- **Forward portals.** Always taken, then the hole-out search runs from the exit.
+- **Lookahead.** Before trusting the agent's shot, try a few thousand others and let the agent's own value estimate judge where they leave the ball. This is what saved the mostly-water hole that sank the first autopilot round.
+
+`hands/hands.js` plays the shots in the real browser by timing the game's own taps to the frame (aim within about 0.0003 deg), and `scripts/autoplay.py` runs a whole practice round on its own. Practice only, nothing is ever submitted.
+
+| round | result |
+|---|---|
+| Ferngate Old Course, real game, brain + hands | -20 |
+| Stonemoor Links, real game, autopilot (before the lookahead) | -16 |
+| All three recent courses replanned with the full brain | -21 to -24, eagle or better on every hole |
+
