@@ -63,6 +63,12 @@ class Planner:
         self.simulator = self.env.simulator
         self.course_info_cache = {}
 
+    def allowed_clubs(self, course_key, lie):
+        """Club indexes the game lets you pick from this lie."""
+        info = self.course_info(course_key)
+        cap = info["lies"].get(lie, {}).get("maxCarry")
+        return [index for index, club in enumerate(info["clubs"]) if cap is None or club["carry"] <= cap]
+
     def course_info(self, course_key):
         if course_key not in self.course_info_cache:
             self.course_info_cache[course_key] = self.simulator.course_info(course_key)
@@ -76,6 +82,13 @@ class Planner:
         state = self.env._make_state(observation)
         club, aim_offset, meter = self.policy(observation, state, self.course_info(course_key))
         aim = observation["pin_bearing"] + aim_offset
+        # The game greys out clubs that carry further than the lie allows (a
+        # bunker or a pile of leaves caps it at 160 yd). The simulator doesn't
+        # stop you, so the planner has to: only ever consider playable clubs.
+        allowed = self.allowed_clubs(course_key, observation["lie"])
+        self.allowed = allowed
+        if club not in allowed:
+            club = min(allowed)  # the longest club that's allowed
         agent_shot = [club, aim, meter]
         details = {"source": "agent", "pin_distance": observation["pin_distance"], "lie": observation["lie"]}
 
@@ -86,7 +99,7 @@ class Planner:
                 return portal_shot[0], details
             return self.lookahead(course_key, hole_index, shots, observation, agent_shot, details)
 
-        clubs = [c for c in range(club - SEARCH_CLUB_RANGE, club + SEARCH_CLUB_RANGE + 1) if 0 <= c <= 8]
+        clubs = [c for c in range(club - SEARCH_CLUB_RANGE, club + SEARCH_CLUB_RANGE + 1) if c in allowed]
         found = self.simulator.request({
             "cmd": "search", "key": course_key, "hole": hole_index, "shots": shots, "clubs": clubs,
             "aim": aim, "aim_half_width": SEARCH_AIM_HALF_WIDTH, "aim_step": SEARCH_AIM_STEP,
@@ -140,7 +153,7 @@ class Planner:
         bearing = observation["pin_bearing"]
         candidates = [agent_shot] + [
             [club, bearing + math.radians(offset), meter]
-            for club in range(9) for offset in LOOKAHEAD_AIM_OFFSETS_DEG for meter in LOOKAHEAD_METERS
+            for club in self.allowed for offset in LOOKAHEAD_AIM_OFFSETS_DEG for meter in LOOKAHEAD_METERS
         ]
         outcomes = self.simulator.request({"cmd": "outcomes", "key": course_key, "hole": hole_index,
                                            "shots": shots, "candidates": candidates})
@@ -222,7 +235,7 @@ class Planner:
         bearing = observation["pin_bearing"] + math.atan2(portal["across"], portal["ahead"])
         found = self.simulator.request({
             "cmd": "search", "goal": "portal", "key": course_key, "hole": hole_index, "shots": shots,
-            "clubs": list(range(9)), "aim": bearing, "aim_half_width": PORTAL_AIM_HALF_WIDTH,
+            "clubs": self.allowed, "aim": bearing, "aim_half_width": PORTAL_AIM_HALF_WIDTH,
             "aim_step": PORTAL_AIM_STEP, "meter": 0.675, "meter_half_width": 0.475, "meter_step": PORTAL_METER_STEP,
         })
         if not found["found"]:

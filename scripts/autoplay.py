@@ -64,7 +64,13 @@ def find_game_frame(page):
     for frame in page.frames:
         if "play.html" in frame.url:
             return frame
-    return None
+    # Playwright's frame list sometimes misses the game's iframe even though
+    # it's on screen, so also look it up through the iframe element itself.
+    try:
+        element = page.query_selector("iframe[src*='play.html']")
+        return element.content_frame() if element else None
+    except Exception:
+        return None
 
 
 def read_state(frame):
@@ -78,20 +84,38 @@ def read_state(frame):
     return frame.evaluate("() => hands.state()")
 
 
+def close_popups(frame):
+    """Dismiss promo popups (a fresh profile gets a sale banner) with their close button."""
+    for selector in ["[role=dialog] button[aria-label='Close']", "[role=dialog] button:has-text('×')"]:
+        try:
+            buttons = frame.locator(selector)
+            for index in range(buttons.count()):
+                if buttons.nth(index).is_visible():
+                    buttons.nth(index).click(timeout=1500)
+                    time.sleep(0.5)
+        except Exception:
+            pass
+
+
 def open_practice_round(page, course_name):
     """Practice -> pick the course, by clicking the menu like a player would."""
-    deadline = time.time() + 30
-    frame = None
-    while frame is None and time.time() < deadline:
-        frame = find_game_frame(page) or page.main_frame
+    deadline = time.time() + 45
+    while time.time() < deadline:
+        frame = find_game_frame(page)
+        if frame is None:
+            time.sleep(1)
+            continue
+        close_popups(frame)
         try:
             frame.get_by_text("Practice", exact=True).first.click(timeout=3000)
+            close_popups(frame)
+            row = frame.get_by_text(course_name, exact=False).first
+            row.click(timeout=10000)
+            print(f"Opened a practice round: {row.inner_text().strip()}")
+            return
         except Exception:
-            frame = None
             time.sleep(1)
-    row = frame.get_by_text(course_name, exact=False).first
-    row.click(timeout=10000)
-    print(f"Opened a practice round: {row.inner_text().strip()}")
+    raise RuntimeError("couldn't open the practice round; start it by hand in the window")
 
 
 def describe(club_names, shot, details):
@@ -137,6 +161,8 @@ if (window.top === window) {
 }
 """
 
+
+RECORD_SIZE = {"width": 1600, "height": 1000}
 
 # Game phases that mean a round is actually being played (not the menu).
 PLAYING_PHASES = {"aim", "power", "flight", "settle", "putting", "holeend", "trapped", "thief"}
@@ -188,6 +214,10 @@ def check_against_simulator(planner, course_key, hole_index, report):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--course", help="part of a course name from the Practice list: opens it and plays the whole round")
+    parser.add_argument("--record", action="store_true",
+                        help="record the window to outputs/recordings/, with a timestamped log of every shot (for the video)")
+    parser.add_argument("--profile", default=str(PROJECT_ROOT / ".browser-profile"),
+                        help="browser profile folder; an empty folder behaves like a private window")
     parser.add_argument("--checkpoint", default=str(PROJECT_ROOT / "checkpoints" / "run-2" / "latest.pt"))
     args = parser.parse_args()
 
@@ -195,9 +225,18 @@ def main():
     planner = Planner(args.checkpoint)
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch_persistent_context(
-            str(PROJECT_ROOT / ".browser-profile"), channel="chrome", headless=False, viewport=None,
-        )
+        recording_dir = PROJECT_ROOT / "outputs" / "recordings"
+        launch_options = {"channel": "chrome", "headless": False, "viewport": None}
+        if args.record:
+            # A fixed window size, so the footage is the same shape every time.
+            launch_options.update(viewport=RECORD_SIZE, record_video_dir=str(recording_dir), record_video_size=RECORD_SIZE)
+        browser = playwright.chromium.launch_persistent_context(args.profile, **launch_options)
+        recording_started = time.time()
+        events = []
+
+        def note(kind, **fields):
+            if args.record:
+                events.append({"t": round(time.time() - recording_started, 2), "kind": kind, **fields})
         browser.add_init_script(PANEL_SCRIPT)
         page = browser.pages[0] if browser.pages else browser.new_page()
         page.goto(SITE)
@@ -242,6 +281,10 @@ def main():
                     out.write_text(json.dumps({"course": course_key, "scores": state["scores"], "to_par": to_par,
                                                "shots": log}, indent=1))
                     print(f"\nRound over: {state['scores']}  {to_par:+d}   saved {out}")
+                    note("round_over", scores=state["scores"], to_par=to_par)
+                    if args.course and args.record:
+                        time.sleep(4)  # let the last celebration play out on camera
+                        break
                 time.sleep(0.5)
                 continue
 
@@ -278,6 +321,8 @@ def main():
             expected = planner.simulator.observe(course_key, hole_index, shots + [shot])
             tolerances = tolerances_for(details)
             plan_text = describe(club_names, shot, details)
+            note("shot_start", hole=hole_index, shot=len(shots), club=club_names[shot[0]], source=details["source"],
+                 expect_holed=bool(expected["done"] and expected["holed"]))
             print(f"  {plan_text}  (thought for {think_seconds:.0f}s)", flush=True)
             goal = "going for the hole" if expected["done"] and expected["holed"] else details["source"]
             panel.status(f"Hole {hole_index + 1}: {club_names[shot[0]]}, {goal}.")
@@ -298,6 +343,8 @@ def main():
                   f"swing took {report['seconds_to_swing']:.1f}s"
                   + ("" if as_planned else ", not what was planned")
                   + ("" if agrees else ", SIMULATOR DISAGREES WITH THE GAME") + ")", flush=True)
+            note("shot_end", hole=hole_index, shot=len(shots), outcome=outcome, done=real["done"],
+                 score=real.get("score"), par=info["pars"][hole_index], holed=bool(real.get("holed")))
             if real["done"]:
                 print(f"     score {real['score']} ({real['score'] - info['pars'][hole_index]:+d})")
             log.append({"hole": hole_index, "shot": shot, "details": details, "tolerances": tolerances,
@@ -305,6 +352,12 @@ def main():
                         "meter_error": report["meter_error"], "seconds_to_swing": report["seconds_to_swing"],
                         "agrees_with_simulator": agrees})
         print("Window closed.")
+        if not page.is_closed():
+            browser.close()  # also finishes writing the recording
+        if args.record:
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            (recording_dir / f"events_{stamp}.json").write_text(json.dumps(events, indent=1))
+            print(f"Recording saved in {recording_dir} (events_{stamp}.json has the shot timings).")
     planner.close()
 
 

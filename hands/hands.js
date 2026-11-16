@@ -83,6 +83,8 @@
     const AIM_TOLERANCE = ((tolerances.aim_deg || DEFAULT_AIM_TOLERANCE_DEG) * Math.PI) / 180;
     const METER_TOLERANCE = tolerances.meter || DEFAULT_METER_TOLERANCE;
     await waitFor(readyToAim, "the aim phase");
+    // The game greys out clubs that carry further than this lie allows.
+    if (CLUBS[clubIndex].carry > (pvLie().maxCarry || 1e9)) throw new Error("club " + clubIndex + " is not allowed from this lie");
     if (st.clubIdx !== clubIndex) pickClub(clubIndex);
     if (st.clubIdx !== clubIndex) throw new Error("could not pick club " + (clubIndex) + " from this lie");
     const club = CLUBS[clubIndex];
