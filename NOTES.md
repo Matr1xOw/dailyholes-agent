@@ -196,3 +196,7 @@ Planned rounds with the full brain (hole-outs, forward portals, fine search, loo
 | Elderridge Golf Club (11-16) | -17 | -20 |
 
 The lookahead also helps off the tee on normal holes: it often picks a maxed-out driver (meter 1.10) that runs right up near the green, which the agent alone was too cautious to try.
+
+## 2026-11-16: Autopilot panel
+
+Running everything from the terminal (or through Claude) was tedious, so `./autopilot` now opens the game with a small panel in the corner of the window: an on/off switch, "Play one shot", and a status line (what it's thinking, which club, whether it's going for the hole). It can take over mid-hole because the brain always plans from the shots already in the game's own log, and switching it off hands back after the current shot. On the menu it just waits. In a ranked round it switches itself off and says why.

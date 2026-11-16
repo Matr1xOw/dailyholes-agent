@@ -64,7 +64,9 @@ Run two trained overnight on 8 million shots and came out at -6.0 a round on the
 - **Forward portals.** Always taken, then the hole-out search runs from the exit.
 - **Lookahead.** Before trusting the agent's shot, try a few thousand others and let the agent's own value estimate judge where they leave the ball. This is what saved the mostly-water hole that sank the first autopilot round.
 
-`hands/hands.js` plays the shots in the real browser by timing the game's own taps to the frame (aim within about 0.0003 deg), and `scripts/autoplay.py` runs a whole practice round on its own. Practice only, nothing is ever submitted.
+`hands/hands.js` plays the shots in the real browser by timing the game's own taps to the frame (aim within about 0.0003 deg). Practice only, nothing is ever submitted.
+
+To use it, run `./autopilot`. That opens the game in its own Chrome window with an Autopilot panel in the corner. Play as normal and switch it on whenever you want, even halfway through a hole, and it takes over from wherever the ball is. "Play one shot" does just the next shot, and switching it off hands back after the current shot. It won't play a ranked round. `./autopilot --course "Ferngate"` opens that practice course and plays the whole round by itself.
 
 | round | result |
 |---|---|
