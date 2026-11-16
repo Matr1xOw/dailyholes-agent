@@ -74,3 +74,9 @@ To use it, run `./autopilot`. That opens the game in its own Chrome window with 
 | Stonemoor Links, real game, autopilot (before the lookahead) | -16 |
 | All three recent courses replanned with the full brain | -21 to -24, eagle or better on every hole |
 
+## Video and what's next
+
+There's a 50 second showcase video in `video/`, built with Remotion from a real recorded autopilot round (-21). `cd video && npm install && npm run render` builds it, after running `scripts/make_audio.py` for the sound. The footage itself isn't in the repo.
+
+The full status, gotchas, and the list of next steps are at the bottom of `NOTES.md`.
+

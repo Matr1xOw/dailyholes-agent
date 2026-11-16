@@ -208,3 +208,51 @@ Running everything from the terminal (or through Claude) was tedious, so `./auto
 - Numbers come from `scripts/export_video_data.py` (training curve, snapshot test scores, baselines) and `scripts/hitmap.js` (all 14,400 tee shots around the planned one on hole 1, 158 of which drop).
 - Bugs found while recording: (1) from a pile of leaves or a bunker the game greys out clubs that carry over 160 yd, but the simulator doesn't, so the lookahead picked an unplayable driver and the hands waited forever. The planner now only considers allowed clubs and the hands refuse a greyed-out one. Training also allowed them, so the next training run should enforce it. (2) A fresh browser profile shows a promo popup first; the autopilot closes it. (3) Playwright sometimes misses the game iframe in its frame list; it now falls back to the iframe element.
 - Second cut: trimmed all on-screen text to short, specific lines (no taglines), and added sound. Everything is synthesized in `scripts/make_audio.py` (no samples to license): a 120 bpm A-minor track whose sections follow the scenes (sparse intro, groove, breakdown plus riser into the search, brighter results, fade), plus a club strike, cup rattle, ace sting, clicks, ticks, pops and whooshes. `scripts/find_swings.py` finds the exact frame of every swing in the recording (the game's button stops being green when the ball is struck), so the strike sound lands on the real hit. Aces also get a white flash and a punch-in. Scene lengths live in `video/src/timing.json`, which both the video and the music generator read.
+
+## 2026-11-16: Where things stand, and what's next
+
+Handoff note so I (or a fresh Claude session) can pick this up cold.
+
+### What works
+
+- **Simulator**: the game's own code running in Node. `scripts/fetch_game.py` downloads it into `vendor/` (gitignored). `sim/parity.js` checks it against the real game (fingerprint `cc0b655a`). If the site updates, re-fetch and re-run parity before trusting anything.
+- **Agent**: PPO, 8M shots, `checkpoints/run-2/latest.pt` (snapshots every 500k in the same folder). -6.0 a round on 360 unseen holes. Training: `scripts/train.py`. Scoreboard: `scripts/evaluate.py`.
+- **Brain**: `agent/planner.py`. Order per shot: hole-out search near the agent's shot (plus a wide search under 200 yd, plus a fine zoom for narrow hits), then forward portal if one's ahead, then a one-step lookahead scored by the agent's value head. Only clubs the lie allows. Offline round: `scripts/plan_round.py <checkpoint> <course key>`.
+- **Hands**: `hands/hands.js`, runs inside the game page and times the game's own taps to the frame. Real error about 0.0003 deg / 0.0003 meter.
+- **Autopilot**: `./autopilot` opens Chrome with an on/off panel; `--course "<name>"` opens that practice course and plays it; `--record` records the window plus a shot timing log; `--profile <empty dir>` acts like a private window. Practice only, refuses ranked rounds.
+- **Video**: `video/` (Remotion). `npm run studio` to edit, `npm run render` for `out/showcase.mp4`. 51.5 s, 50 fps. Scene lengths in `video/src/timing.json`. Audio comes from `scripts/make_audio.py` (rerun after changing timing). Data from `scripts/export_video_data.py 2026-11-11`. Swing times from `scripts/find_swings.py`.
+
+### Results so far
+
+| what | score |
+|---|---|
+| agent alone, 360 test holes | -6.0 a round |
+| full brain, planned offline (3 recent courses) | -20 to -24 |
+| real game, Ferngate (brain + hands, by hand) | -20 |
+| real game, Stonemoor (autopilot, before lookahead) | -16 (one +4 water hole) |
+| real game, Fernmoor (autopilot, recorded for the video) | -21, matched the plan exactly |
+
+### Gotchas worth remembering
+
+- Course keys for training must start with a letter (date-gated rules compare keys as text).
+- Bunkers and leaves cap carry at 160 yd. The game greys out longer clubs but the sim doesn't, and training didn't know either.
+- Practice is 3 rounds a day per browser profile (count lives in localStorage). Today's course is locked until the ranked round is played.
+- Playwright sometimes misses the game iframe in `page.frames`; `find_game_frame` falls back to the iframe element. A fresh profile shows a promo popup first; the autopilot closes it.
+- The hands need an accurate frame interval (measured over 240 frames). Timestamps are rounded to 0.1 ms, so frame-to-frame gaps lie.
+- Playwright records at 25 fps. The video renders at 50 so footage frames map 2:1.
+- Remotion's bundled ffmpeg needs `DYLD_LIBRARY_PATH` set to its folder to run by hand.
+- `find_swings.py` reads a pixel inside the action button at (640, 910) of a 1600x1000 recording. A different window size means a different pixel.
+- Footage isn't in git: `video/public/footage/round.webm` (copy of `outputs/recordings/fernmoor_round.webm`). The shot timings are in `video/src/footage.json`.
+- Never submit anything to the site. Practice rounds only.
+
+### Next steps, best first
+
+1. **Train on the search's own picks (expert iteration, like AlphaZero).** Play training holes with the planner, record the shot it chose, and add a loss that pulls the policy toward those shots. Keep the PPO loss too. This is still the agent improving from its own play, not copying the hand-written bot. Goal: the network alone beats -6.
+2. **Enforce maxCarry in training.** Add the lie cap to the env (or the sim) so the agent stops learning drivers from bunkers. Do this before the next training run, even a short one.
+3. **Two-shot planning.** Pick drives by how wide the hole-out window is on the next shot, not just by the value head. Fewer 0.02 deg margins, more holed second shots.
+4. **Smart + search baseline.** Same planner on top of `smart_player` instead of the agent. Tells me how much the RL is really worth. One evening of work.
+5. **December rules.** Frozen ponds and winter courses from Dec 1. Training keys never hit them. Also add boulders and lava rocks to the mini-map.
+6. **Faster thinking.** Move the lookahead's candidate scoring into Node, or batch the value net calls. Some shots take 40 s.
+7. **Daily plan script.** Plan today's course each morning, save the line per hole, practice only.
+8. **9:16 video cut.** Mostly layout in `video/src/scenes`.
+9. **GitHub.** Repo is ready to publish whenever I want. Game code, footage and outputs are all gitignored.
