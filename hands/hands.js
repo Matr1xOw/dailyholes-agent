@@ -157,6 +157,9 @@
       course_key: course.key,
       course_name: course.name,
       practice,
+      // The game's own test (see its end card): a ranked Wild Three runs with
+      // practice=true under the hood but still counts.
+      ranked: (!practice && !tutorial) || (wildOn && wildRanked),
       hole_index: st.holeIdx,
       phase: st.phase,
       strokes: st.strokes,

@@ -274,14 +274,14 @@ def main():
                 info = planner.course_info(course_key)
                 club_names = [club["id"] for club in info["clubs"]]
                 log = []
-                print(f"\n{info['name']} ({course_key}){', practice' if state['practice'] else ''}. Par {sum(info['pars'])}.")
+                print(f"\n{info['name']} ({course_key}){'' if state['ranked'] else ', practice'}. Par {sum(info['pars'])}.")
 
             to_par = sum(state["scores"]) - sum(info["pars"][: len(state["scores"])])
             if state["round_over"]:
                 panel.set(on=False, once=False)
                 panel.status(f"Round over: {to_par:+d}.")
                 round_id = (course_key, tuple(state["scores"]))
-                if state["practice"] and round_id not in saved_rounds and log:
+                if not state["ranked"] and round_id not in saved_rounds and log:
                     saved_rounds.add(round_id)
                     out = PROJECT_ROOT / "outputs" / f"autoplay_{course_key}_{time.strftime('%Y%m%d-%H%M%S')}.json"
                     out.write_text(json.dumps({"course": course_key, "scores": state["scores"], "to_par": to_par,
@@ -298,7 +298,7 @@ def main():
                 panel.status(f"Off. Hole {state['hole_index'] + 1}, {to_par:+d} so far.")
                 time.sleep(0.3)
                 continue
-            if not state["practice"]:
+            if state["ranked"]:
                 # Ranked rounds are yours alone. Switch off and leave it be.
                 panel.set(on=False, once=False)
                 panel.status("This is a ranked round. The autopilot only plays practice.")
