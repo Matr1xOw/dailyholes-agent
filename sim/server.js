@@ -26,8 +26,12 @@
 //   {"cmd": "batch", "requests": [ ... ]}
 //     Several requests in one message, to cut down on back-and-forth.
 
+const os = require("os");
+const path = require("path");
 const readline = require("readline");
+const { Worker } = require("worker_threads");
 const { loadGame } = require("./load_game.js");
+const { gridShape, makeHitTest, fillRows, COARSE } = require("./search_grid.js");
 
 const game = loadGame();
 
@@ -336,51 +340,28 @@ function handleCourse(request) {
 // perfectly exact, so among the hits it picks the "safest": the one with the
 // most hits around it in every direction (its inset, in grid steps), meaning
 // the most room for error.
-function handleSearch(request) {
+async function handleSearch(request) {
   const course = getCourse(request.key);
   const hole = course.holes[request.hole];
   if (!hole) throw new Error(`course ${request.key} has no hole ${request.hole}`);
-  const shots = request.shots || [];
-  let ball = { x: hole.path[0].x, y: hole.path[0].y }, lie = "tee";
-  if (shots.length > 0) {
-    const before = game.resumeHole(hole, request.hole, request.key, shots);
-    if (!before || before.score != null) throw new Error("the hole is already over");
-    ball = before.ball;
-    lie = before.lie;
-  }
+  const isHit = makeHitTest(game, hole, request);
+  if (!isHit) return { found: false, hits: 0 };
   const aimStep = request.aim_step, meterStep = request.meter_step;
-  const aimCount = 2 * Math.round(request.aim_half_width / aimStep) + 1;
-  const meterCount = 2 * Math.round(request.meter_half_width / meterStep) + 1;
-  const shotIndex = shots.length;
-  // What counts as a hit. "holed" (the default): the shot drops. "portal": the
-  // shot comes to rest in the hole's portal and gets sent to its exit. That is
-  // checked by replaying the whole hole, so windmills and the like count too.
-  const goal = request.goal || "holed";
-  const strokesBefore = shots.length === 0 ? 0 : game.resumeHole(hole, request.hole, request.key, shots).strokes;
-  const isHit = goal === "portal"
-    ? (club, aim, meter) => {
-        const after = game.resumeHole(hole, request.hole, request.key, [...shots, [club, aim, meter]]);
-        return after && after.score == null && after.strokes === strokesBefore + 1 &&
-          Math.hypot(after.ball.x - hole.portal.exit.x, after.ball.y - hole.portal.exit.y) < 0.01;
-      }
-    : (club, aim, meter) =>
-        game.resolveShot(hole, ball, lie, game.CLUBS[club], aim, meter, game.shotRng(request.key, request.hole, shotIndex)).holed;
-  if (goal === "portal" && !hole.portal) return { found: false, hits: 0 };
+  const { aimCount, meterCount } = gridShape(request);
+  const grids = await fillGrids(hole, request, isHit, aimCount, meterCount);
 
   let best = null, totalHits = 0;
   const samples = []; // a spread of hits, for the caller to look at more closely
   for (const club of request.clubs) {
-    const grid = new Uint8Array(aimCount * meterCount);
+    const grid = grids.get(club);
     let clubHits = 0;
-    for (let i = 0; i < aimCount; i++) {
-      const aim = request.aim + (i - (aimCount - 1) / 2) * aimStep;
-      for (let j = 0; j < meterCount; j++) {
-        const meter = request.meter + (j - (meterCount - 1) / 2) * meterStep;
-        if (meter < 0 || meter > game.METER_MAX) continue;
-        if (isHit(club, aim, meter)) {
-          grid[i * meterCount + j] = 1; clubHits++;
-          if (samples.length < 400) samples.push([club, aim, meter]);
-        }
+    // Same order as a plain row-by-row scan, so the samples come out the same.
+    for (let k = 0; k < grid.length; k++) {
+      if (!grid[k]) continue;
+      clubHits++;
+      if (samples.length < 400) {
+        const i = Math.floor(k / meterCount), j = k % meterCount;
+        samples.push([club, request.aim + (i - (aimCount - 1) / 2) * aimStep, request.meter + (j - (meterCount - 1) / 2) * meterStep]);
       }
     }
     totalHits += clubHits;
@@ -425,6 +406,103 @@ function handleSearch(request) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// The hole-out search is millions of simulated shots, and every one is
+// independent, so big searches are split by aim rows across worker threads
+// (one copy of the game each). Small ones aren't worth the round trip. The
+// pool only starts on the first big search, so training never pays for it.
+// ---------------------------------------------------------------------------
+
+const SEARCH_WORKERS = Number(process.env.DH_SEARCH_WORKERS) || Math.max(1, os.cpus().length - 2);
+const PARALLEL_MIN_CELLS = 20000;
+let workers = null, nextSearchId = 0;
+
+function startWorkers() {
+  workers = Array.from({ length: SEARCH_WORKERS }, () => {
+    const worker = new Worker(path.join(__dirname, "search_worker.js"));
+    worker.unref(); // don't keep the server alive once stdin closes
+    return worker;
+  });
+}
+
+// Hands blocks of work to the workers as they free up, so a slow block
+// doesn't hold everyone up (shots near the cup take longer to roll out).
+// Calls onResult with each answer.
+function runBlocks(request, blocks, onResult) {
+  if (!workers) startWorkers();
+  const searchId = nextSearchId++;
+  return new Promise((resolve, reject) => {
+    if (blocks.length === 0) return resolve();
+    let sent = 0, done = 0;
+    const cleanups = [];
+    const finish = (error) => { cleanups.forEach((fn) => fn()); error ? reject(error) : resolve(); };
+    for (const worker of workers) {
+      const send = () => {
+        if (sent >= blocks.length) return;
+        const { mask, ...block } = blocks[sent++];
+        worker.postMessage({ searchId, request, ...block, mask }, mask ? [mask.buffer] : []);
+      };
+      const onMessage = (message) => {
+        if (message.searchId !== searchId) return;
+        onResult(message);
+        if (++done === blocks.length) finish();
+        else send();
+      };
+      const onError = (error) => finish(error);
+      worker.on("message", onMessage);
+      worker.on("error", onError);
+      cleanups.push(() => { worker.off("message", onMessage); worker.off("error", onError); });
+      send();
+    }
+  });
+}
+
+// "prune": the coarse pass keeps cells within this many yards of the pin.
+async function fillGrids(hole, request, isHit, aimCount, meterCount) {
+  const grids = new Map(request.clubs.map((club) => [club, new Uint8Array(aimCount * meterCount)]));
+  const parallel = SEARCH_WORKERS > 1 && request.clubs.length * aimCount * meterCount >= PARALLEL_MIN_CELLS;
+  if (!parallel) {
+    for (const club of request.clubs) grids.get(club).set(fillRows(game, hole, request, isHit, club, 0, aimCount));
+    return grids;
+  }
+  const rowsPerBlock = Math.max(COARSE, COARSE * Math.ceil(aimCount / (SEARCH_WORKERS * 6 * COARSE)));
+  const rowBlocks = [];
+  for (let row = 0; row < aimCount; row += rowsPerBlock) rowBlocks.push([row, Math.min(aimCount, row + rowsPerBlock)]);
+
+  // Which cells to search in full, per club (null: all of them).
+  const masks = new Map(request.clubs.map((club) => [club, null]));
+  const pruneYards = (request.goal || "holed") === "holed" ? request.prune : null;
+  if (pruneYards) {
+    const coarseCols = Math.ceil(meterCount / COARSE);
+    const blocks = request.clubs.flatMap((club) => rowBlocks.map(([rowStart, rowEnd]) => ({ kind: "coarse", club, rowStart, rowEnd })));
+    const near = new Map(request.clubs.map((club) => [club, new Uint8Array(aimCount * meterCount)]));
+    await runBlocks(request, blocks, ({ club, rowStart, cells }) => {
+      const mask = near.get(club);
+      const firstRow = Math.ceil(rowStart / COARSE) * COARSE;
+      for (let k = 0; k < cells.length; k++) {
+        if (!(cells[k] <= pruneYards)) continue;
+        // Search everything within one coarse step of a coarse shot that came close.
+        const i = firstRow + Math.floor(k / coarseCols) * COARSE, j = (k % coarseCols) * COARSE;
+        for (let di = Math.max(0, i - COARSE); di <= Math.min(aimCount - 1, i + COARSE); di++)
+          mask.fill(1, di * meterCount + Math.max(0, j - COARSE), di * meterCount + Math.min(meterCount - 1, j + COARSE) + 1);
+      }
+    });
+    for (const club of request.clubs) masks.set(club, near.get(club));
+  }
+
+  const blocks = [];
+  for (const club of request.clubs) {
+    const mask = masks.get(club);
+    for (const [rowStart, rowEnd] of rowBlocks) {
+      if (!mask) { blocks.push({ kind: "fine", club, rowStart, rowEnd }); continue; }
+      const slice = mask.slice(rowStart * meterCount, rowEnd * meterCount);
+      if (slice.some((v) => v)) blocks.push({ kind: "fine", club, rowStart, rowEnd, mask: slice });
+    }
+  }
+  await runBlocks(request, blocks, ({ club, rowStart, cells }) => grids.get(club).set(cells, rowStart * meterCount));
+  return grids;
+}
+
 // Where each of several candidate next shots would leave things, without the
 // mini-map (so it's cheap enough to try thousands). Used for the lookahead.
 function handleOutcomes(request) {
@@ -439,26 +517,31 @@ function handleOutcomes(request) {
   });
 }
 
-function handle(request) {
+async function handle(request) {
   switch (request.cmd) {
     case "outcomes": return handleOutcomes(request);
     case "observe": return handleObserve(request);
     case "search": return handleSearch(request);
     case "course": return handleCourse(request);
-    case "batch": return request.requests.map((r) => safeHandle(r));
+    case "batch": {
+      const answers = [];
+      for (const r of request.requests) answers.push(await safeHandle(r));
+      return answers;
+    }
     case "ping": return { pong: true };
     default: throw new Error(`unknown command: ${request.cmd}`);
   }
 }
 
-function safeHandle(request) {
+async function safeHandle(request) {
   try {
-    return { ok: true, result: handle(request) };
+    return { ok: true, result: await handle(request) };
   } catch (error) {
     return { ok: false, error: String(error && error.message ? error.message : error) };
   }
 }
 
+let queue = Promise.resolve();
 const input = readline.createInterface({ input: process.stdin, terminal: false });
 input.on("line", (line) => {
   if (!line.trim()) return;
@@ -466,8 +549,9 @@ input.on("line", (line) => {
   try {
     request = JSON.parse(line);
   } catch (error) {
-    process.stdout.write(JSON.stringify({ ok: false, error: "bad JSON" }) + "\n");
+    queue = queue.then(() => process.stdout.write(JSON.stringify({ ok: false, error: "bad JSON" }) + "\n"));
     return;
   }
-  process.stdout.write(JSON.stringify(safeHandle(request)) + "\n");
+  // Searches are async now, so chain the requests to keep answers in order.
+  queue = queue.then(async () => process.stdout.write(JSON.stringify(await safeHandle(request)) + "\n"));
 });

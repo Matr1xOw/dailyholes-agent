@@ -31,7 +31,11 @@ SEARCH_AIM_STEP = math.radians(0.02)
 SEARCH_METER_HALF_WIDTH = 0.15
 SEARCH_METER_STEP = 0.001
 WIDE_SEARCH_MAX_PIN_DISTANCE = 200
-WIDE_SEARCH_AIM_CENTERS_DEG = [-18, -12, -6, 0, 6, 12, 18]  # each covers +-3 degrees
+WIDE_SEARCH_AIM_HALF_WIDTH = math.radians(21.0)
+# The simulator skips the parts of a hole-out search where a coarse pass shows
+# the ball never comes within this many yards of the pin. Checked against the
+# full search: same hole-outs, a fraction of the time (NOTES.md, 2026-11-17).
+SEARCH_PRUNE_YARDS = 6
 MIN_INSET_STEPS = 1
 # Zooming in on hole-outs narrower than the search grid. The hands land
 # within about 0.0003 deg and 0.0003 meter, and only tap inside 0.004 deg /
@@ -104,19 +108,20 @@ class Planner:
             "cmd": "search", "key": course_key, "hole": hole_index, "shots": shots, "clubs": clubs,
             "aim": aim, "aim_half_width": SEARCH_AIM_HALF_WIDTH, "aim_step": SEARCH_AIM_STEP,
             "meter": meter, "meter_half_width": SEARCH_METER_HALF_WIDTH, "meter_step": SEARCH_METER_STEP,
+            "prune": SEARCH_PRUNE_YARDS,
         })
         if not (found["found"] and found["inset_steps"] >= MIN_INSET_STEPS) and observation["pin_distance"] <= WIDE_SEARCH_MAX_PIN_DISTANCE:
             # Nothing near the agent's idea. On shorter shots, try a much wider
             # fan of aims around the pin and the whole meter, since a bounce off
             # a slope can make a shot well off line the one that drops.
-            for offset_deg in WIDE_SEARCH_AIM_CENTERS_DEG:
-                wide = self.simulator.request({
-                    "cmd": "search", "key": course_key, "hole": hole_index, "shots": shots, "clubs": clubs,
-                    "aim": observation["pin_bearing"] + math.radians(offset_deg), "aim_half_width": SEARCH_AIM_HALF_WIDTH,
-                    "aim_step": SEARCH_AIM_STEP, "meter": 0.6, "meter_half_width": 0.55, "meter_step": 0.002,
-                })
-                if wide["found"] and (not found["found"] or wide["inset_steps"] > found["inset_steps"]):
-                    found = wide
+            wide = self.simulator.request({
+                "cmd": "search", "key": course_key, "hole": hole_index, "shots": shots, "clubs": clubs,
+                "aim": observation["pin_bearing"], "aim_half_width": WIDE_SEARCH_AIM_HALF_WIDTH,
+                "aim_step": SEARCH_AIM_STEP, "meter": 0.6, "meter_half_width": 0.55, "meter_step": 0.002,
+                "prune": SEARCH_PRUNE_YARDS,
+            })
+            if wide["found"] and (not found["found"] or wide["inset_steps"] > found["inset_steps"]):
+                found = wide
         if found["found"] and found["inset_steps"] >= MIN_INSET_STEPS:
             details.update({
                 "source": "hole-out search",

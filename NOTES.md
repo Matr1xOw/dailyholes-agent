@@ -256,3 +256,14 @@ Handoff note so I (or a fresh Claude session) can pick this up cold.
 7. **Daily plan script.** Plan today's course each morning, save the line per hole, practice only.
 8. **9:16 video cut.** Mostly layout in `video/src/scenes`.
 9. **GitHub.** Repo is ready to publish whenever I want. Game code, footage and outputs are all gitignored.
+
+## 2026-11-17: Faster thinking on short shots
+
+The autopilot sometimes sat for ages on easy little wedge shots. Turns out that's the wide search: when nothing holes out near the agent's own idea and the pin is under 200 yd, it searches ±21° and the whole meter for 5 clubs, about 5.8M simulated shots. On one core that was 30 s on a good day and up to 4 minutes on a bad one (long irons roll out slowly).
+
+Two fixes, both checked against the old search:
+
+- **All cores.** Every grid point is independent, so the server now splits big searches by aim rows across worker threads (`sim/search_worker.js`, each with its own copy of the game). About 4x here, since only 4 of the 10 cores are the fast ones. The workers only start on the first big search, so training never pays for them. Same answers bit for bit.
+- **Skip the hopeless part.** Most of a wide grid can't get near the cup (a 5 iron at full power on a 60 yd pitch). A coarse pass tries every 4th aim and meter and records how close each shot's path along the ground comes to the pin, then the full grid only gets searched within one coarse step of shots that came within 6 yd. Checked on 48 searches over 4 courses against the full search: never lost a hole-out, same pick and same margin every time. About 12x on top of the threads.
+
+The seven wide fans were also one grid in disguise (they touch edge to edge), so it's one ±21° call now. Replanned four courses: every shot identical to before, a whole round now plans in 7-13 s. The fine refine and the portal search are still exact, they're small anyway.
