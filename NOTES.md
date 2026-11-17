@@ -267,3 +267,9 @@ Two fixes, both checked against the old search:
 - **Skip the hopeless part.** Most of a wide grid can't get near the cup (a 5 iron at full power on a 60 yd pitch). A coarse pass tries every 4th aim and meter and records how close each shot's path along the ground comes to the pin, then the full grid only gets searched within one coarse step of shots that came within 6 yd. Checked on 48 searches over 4 courses against the full search: never lost a hole-out, same pick and same margin every time. About 12x on top of the threads.
 
 The seven wide fans were also one grid in disguise (they touch edge to edge), so it's one ±21° call now. Replanned four courses: every shot identical to before, a whole round now plans in 7-13 s. The fine refine and the portal search are still exact, they're small anyway.
+
+## 2026-11-17: A crack in a "safe" hole-out
+
+Missed a 196 yd 4 iron hole-out by 0.4 yd. The search said it had 0.04 deg / 0.002 of room, and the hands landed well inside that (-0.013 deg, +0.0004). The simulator agreed it missed, so not a timing bug. Mapping that box at 20x the resolution showed it: 93% of it holes, but a strip of misses only about 0.0002 meter wide runs right through it, between two grid columns. The grid steps 0.001, so every point it sampled was a hit.
+
+Fix: every hole-out pick now gets checked on the fine grid (0.001 deg / 0.0001) before it's played, and the planner takes the spot there with the most real room. Margins come out smaller (the fine window is ±0.03 deg / ±0.0015), so the hands aim tighter. Replanned five courses: same scores, every pick holes across the hands' whole tolerance box, about 5 s more per round.

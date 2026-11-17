@@ -123,13 +123,23 @@ class Planner:
             if wide["found"] and (not found["found"] or wide["inset_steps"] > found["inset_steps"]):
                 found = wide
         if found["found"] and found["inset_steps"] >= MIN_INSET_STEPS:
+            # The grid only samples every 0.02 deg / 0.001 meter, and a thin
+            # strip of misses can hide between its points (a lip-out band
+            # 0.0002 wide cost a hole-out once). So check the pick on the fine
+            # grid and take the spot there with the most real room.
+            pick = [found["club"], found["aim"], found["meter"]]
+            checked = self.refine(course_key, hole_index, shots, [pick] + found["samples"])
+            if checked is not None:
+                details.update({"source": "hole-out search", "hits": found["hits"],
+                                "aim_margin_deg": checked["aim_margin_deg"], "meter_margin": checked["meter_margin"]})
+                return [checked["club"], checked["aim"], checked["meter"]], details
             details.update({
-                "source": "hole-out search",
+                "source": "hole-out search (unchecked)",
                 "hits": found["hits"],
-                "aim_margin_deg": found["aim_margin_deg"],
-                "meter_margin": found["meter_margin"],
+                "aim_margin_deg": min(found["aim_margin_deg"], HANDS_SAFE_AIM_DEG),
+                "meter_margin": min(found["meter_margin"], HANDS_SAFE_METER),
             })
-            return [found["club"], found["aim"], found["meter"]], details
+            return pick, details
         if found["found"]:
             refined = self.refine(course_key, hole_index, shots, found["samples"])
             if refined is not None:
