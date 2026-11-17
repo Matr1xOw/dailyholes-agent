@@ -219,7 +219,7 @@ Handoff note so I (or a fresh Claude session) can pick this up cold.
 - **Agent**: PPO, 8M shots, `checkpoints/run-2/latest.pt` (snapshots every 500k in the same folder). -6.0 a round on 360 unseen holes. Training: `scripts/train.py`. Scoreboard: `scripts/evaluate.py`.
 - **Brain**: `agent/planner.py`. Order per shot: hole-out search near the agent's shot (plus a wide search under 200 yd, plus a fine zoom for narrow hits), then forward portal if one's ahead, then a one-step lookahead scored by the agent's value head. Only clubs the lie allows. Offline round: `scripts/plan_round.py <checkpoint> <course key>`.
 - **Hands**: `hands/hands.js`, runs inside the game page and times the game's own taps to the frame. Real error about 0.0003 deg / 0.0003 meter.
-- **Autopilot**: `./autopilot` opens Chrome with an on/off panel; `--course "<name>"` opens that practice course and plays it; `--record` records the window plus a shot timing log; `--profile <empty dir>` acts like a private window. Practice only, refuses ranked rounds.
+- **Autopilot**: `./autopilot` opens Chrome with an on/off panel; `--course "<name>"` opens that practice course and plays it; `--record` records the window plus a shot timing log; it opens incognito by default, `--profile <dir>` keeps a saved profile instead. Practice only, refuses ranked rounds.
 - **Video**: `video/` (Remotion). `npm run studio` to edit, `npm run render` for `out/showcase.mp4`. 51.5 s, 50 fps. Scene lengths in `video/src/timing.json`. Audio comes from `scripts/make_audio.py` (rerun after changing timing). Data from `scripts/export_video_data.py 2026-11-11`. Swing times from `scripts/find_swings.py`.
 
 ### Results so far

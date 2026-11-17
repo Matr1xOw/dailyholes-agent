@@ -5,9 +5,9 @@ to finish, with no one at the keyboard.
     .venv/bin/python scripts/autoplay.py
     .venv/bin/python scripts/autoplay.py --course "Stonemoor"
 
-It opens a Chrome window (your installed Chrome, but its own profile, kept in
-.browser-profile/) on dailyholes.com, with a small Autopilot panel in the
-corner. Play as normal; switch the autopilot on whenever you like (even
+It opens an incognito Chrome window (your installed Chrome, nothing saved
+when it closes) on dailyholes.com, with a small Autopilot panel in the
+corner. Pass --profile <folder> to keep cookies and storage between runs. Play as normal; switch the autopilot on whenever you like (even
 mid-hole) and it takes over from wherever the ball is, or use "Play one shot"
 for a single shot. Switch it off and it hands back after the current shot.
 
@@ -216,8 +216,8 @@ def main():
     parser.add_argument("--course", help="part of a course name from the Practice list: opens it and plays the whole round")
     parser.add_argument("--record", action="store_true",
                         help="record the window to outputs/recordings/, with a timestamped log of every shot (for the video)")
-    parser.add_argument("--profile", default=str(PROJECT_ROOT / ".browser-profile"),
-                        help="browser profile folder; an empty folder behaves like a private window")
+    parser.add_argument("--profile",
+                        help="keep a browser profile in this folder; without it the window is incognito")
     parser.add_argument("--checkpoint", default=str(PROJECT_ROOT / "checkpoints" / "run-2" / "latest.pt"))
     args = parser.parse_args()
 
@@ -226,11 +226,17 @@ def main():
 
     with sync_playwright() as playwright:
         recording_dir = PROJECT_ROOT / "outputs" / "recordings"
-        launch_options = {"channel": "chrome", "headless": False, "viewport": None}
+        window_options = {"no_viewport": True}
         if args.record:
             # A fixed window size, so the footage is the same shape every time.
-            launch_options.update(viewport=RECORD_SIZE, record_video_dir=str(recording_dir), record_video_size=RECORD_SIZE)
-        browser = playwright.chromium.launch_persistent_context(args.profile, **launch_options)
+            window_options = {"viewport": RECORD_SIZE, "record_video_dir": str(recording_dir), "record_video_size": RECORD_SIZE}
+        if args.profile:
+            browser = playwright.chromium.launch_persistent_context(
+                args.profile, channel="chrome", headless=False, **window_options)
+        else:
+            # A plain new context is Chrome's incognito: fresh storage, thrown away on close.
+            chrome = playwright.chromium.launch(channel="chrome", headless=False)
+            browser = chrome.new_context(**window_options)
         recording_started = time.time()
         events = []
 
