@@ -273,3 +273,11 @@ The seven wide fans were also one grid in disguise (they touch edge to edge), so
 Missed a 196 yd 4 iron hole-out by 0.4 yd. The search said it had 0.04 deg / 0.002 of room, and the hands landed well inside that (-0.013 deg, +0.0004). The simulator agreed it missed, so not a timing bug. Mapping that box at 20x the resolution showed it: 93% of it holes, but a strip of misses only about 0.0002 meter wide runs right through it, between two grid columns. The grid steps 0.001, so every point it sampled was a hit.
 
 Fix: every hole-out pick now gets checked on the fine grid (0.001 deg / 0.0001) before it's played, and the planner takes the spot there with the most real room. Margins come out smaller (the fine window is ±0.03 deg / ±0.0015), so the hands aim tighter. Replanned five courses: same scores, every pick holes across the hands' whole tolerance box, about 5 s more per round.
+
+## 2026-11-20: The site changed how courses are built
+
+The autopilot was struggling on today's course and the planner looked fine offline. Reason: the site shipped a new "course architect" that lays out every course from 2026-11-20 on (doglegs, shaped bunkers and lakes, tree lines, new green shapes, and a bigger two-putt ring). Our copy of the game was from the 16th, so the simulator was planning shots for a different course than the one on screen.
+
+Re-ran `scripts/fetch_game.py`. Parity on the old courses is unchanged (same fingerprint, they're meant to replay exactly), and today's course now plans to -18. No new ground types, so the minimap didn't need changes. The old game is kept as `vendor/game.2026-11-16.js`.
+
+Lesson: re-fetch the game whenever a round goes weird. Something that checks for this automatically would be nice (compare the page's script to vendor/ at startup).
